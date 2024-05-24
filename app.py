@@ -1,8 +1,11 @@
 from flask import Flask, request, jsonify, render_template
 from keras.models import load_model
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.text import tokenizer_from_json
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.text import tokenizer_from_json
+from keras.preprocessing.sequence import pad_sequences
+from transformers import pipeline
+import torch
+from torchvision import transforms
 import numpy as np
 import json
 from PIL import Image
@@ -56,16 +59,40 @@ def classify_text_view():
 
 
 
-image_model = load_model('NSFW_Image_Classifier_inceptionv3.h5')
+# Use a pipeline as a high-level helper
+
+
+model = pipeline("image-classification", model="Pratik-hf/Inappropriate-image-classification-using-ViT")
 
 def classify_image(image):
-    image = image.resize((299, 299))
-    image = np.array(image) / 255.0 
+    # preprocess = transforms.Compose([
+    #     transforms.Resize((224, 224)),  # Resize the image to match the model's input size
+    #     transforms.ToTensor(),           # Convert the image to a tensor
+    #     transforms.Normalize(            # Normalize the image
+    #         mean=[0.485, 0.456, 0.406],   # Mean and standard deviation values are taken from ImageNet normalization
+    #         std=[0.229, 0.224, 0.225]
+    #     ),
+    # ])
+    # input_tensor = preprocess(image).unsqueeze(0)
 
-    prediction = image_model.predict(np.expand_dims(image, axis=0))
-    class_label = 'Appropriate' if (prediction[0][1] > prediction[0][0]) else 'Inappropriate'
+    
+    # Forward pass
+    with torch.no_grad():
+        outputs = model(image)
 
-    return class_label
+    # Get predicted class probabilities
+    # Get the label with the highest probabilities
+    prediction = max(outputs, key=lambda x: x['score'])
+
+    if prediction['label'] == "LABEL_0":
+        prediction = f"{round(prediction['score'], 2)} - Safe"
+    else:
+        prediction = f"{round(prediction['score'], 2)} - Unsafe"
+
+    # Print predicted probabilities for each class
+    print("Predicted probabilities:", prediction)
+
+    return prediction
 
 
 @app.route('/classify-image', methods=['POST', 'GET'])
@@ -75,6 +102,7 @@ def classify_image_view():
             return jsonify({'error': 'No file part'})
 
         image_file = request.files['image']
+
         image = Image.open(image_file)
 
         upload_dir = 'uploads'
